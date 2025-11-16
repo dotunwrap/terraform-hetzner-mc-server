@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+  push:
+    branches:
+      - main
+
+jobs:
+  run_nix_checks:
+    name: Run Nix checks
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    continue-on-error: true
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v5
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            auto-optimise-store = true
+            experimental-features = nix-command flakes
+            substituters = https://cache.nixos.org/ https://nix-community.cachix.org
+            trusted_public_keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run checks
+        run: nix flake check --keep-going
+
+  generate_plan_comment:
+    name: Generate Terraform comment
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    env:
+      TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
+      TF_VAR_public_ssh_key: ${{ secrets.PUBLIC_SSH_KEY }}
+      TF_VAR_private_ssh_key: ${{ secrets.PRIVATE_SSH_KEY }}
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v5
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v3
+      - name: Run terraform validate
+        id: validate
+        run: terraform validate -no-color
+      - name: Run terraform plan
+        id: plan
+        run: terraform plan -no-color -input=false
+        continue-on-error: true
+      - name: Generate comment
+        uses: actions/github-script@v7
+        env:
+          PLAN: "terraform\n${{ steps.plan.outputs.stdout }}"
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            })
+            const botComment = comments.find(comment => comment.user.type === 'Bot' && comment.body.includes('Terraform Output'))
+            
+            const output = `## Terraform Output
+            #### Terraform Validation \`${{ steps.validate.outcome }}\`
+            <details><summary>Validation Output</summary>
+
+            \`\`\`\n
+            ${{ steps.validate.outputs.stdout }}
+            \`\`\`
+
+            </details>
+
+            #### Terraform Plan \`${{ steps.plan.outcome }}\`
+            <details><summary>Show Plan</summary>
+
+            \`\`\`\n
+            ${process.env.PLAN}
+            \`\`\`
+
+            </details>
+
+            *Pusher: @${{ github.actor }} | Action: \`${{ github.event_name }}\``
+
+            if (botComment) {
+              github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: output,
+              })
+            } else {
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: output,
+              })
+            }

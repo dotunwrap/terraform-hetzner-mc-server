@@ -1,0 +1,23 @@
+name: CD
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  apply_terraform:
+    name: Apply Terraform
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v5
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v3
+      - name: Deploy to Hetzner
+        working-directory: infra/
+        env:
+          TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
+          TF_VAR_public_ssh_key: ${{ secrets.PUBLIC_SSH_KEY }}
+          TF_VAR_private_ssh_key: ${{ secrets.PRIVATE_SSH_KEY }}
+        run: terraform apply -auto-approve -no-color

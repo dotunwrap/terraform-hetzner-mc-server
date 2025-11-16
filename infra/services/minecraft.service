@@ -1,0 +1,13 @@
+[Unit]
+Description=Aitai MC Server
+After=network.target
+
+[Service]
+WorkingDirectory=/mnt/minecraft
+ExecStart=/mnt/minecraft/start.sh
+User=minecraft
+Group=minecraft
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
