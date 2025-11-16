@@ -39,6 +39,8 @@ jobs:
     name: Generate Terraform comment
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
+    permissions:
+      pull-requests: write
     env:
       TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
       TF_VAR_public_ssh_key: ${{ secrets.PUBLIC_SSH_KEY }}
