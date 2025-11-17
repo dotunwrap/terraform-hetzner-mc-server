@@ -20,7 +20,7 @@ This is a Minecraft server running vanilla 1.21.10 deployed and provisioned on [
 
 This server is specifically meant for my [boyfriend](https://github.com/jlevere) and I to play on; however, I attempted to build the IaC in a way that can be reused and easily modified for different Minecraft packs or versions.
 
-I would like to give a shoutout to [flytegg/mc-utils](https://github.com/flytegg/mc-utils). This website enabled me to essentially bypass the shakey server.jar download from the official Minecraft website.
+I would like to give a shoutout to [flytegg/mc-utils](https://github.com/flytegg/mc-utils). This website enabled me to essentially bypass the shaky server.jar download from the official Minecraft website.
 
 <!------------------------------>
 
