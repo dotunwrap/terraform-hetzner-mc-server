@@ -102,7 +102,7 @@ jobs:
 
             </details>
 
-            *Pusher: @${{ github.actor }} | Run: [${GITHUB_RUN_ID}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})`
+            *Pusher: @${{ github.actor }} | Run: [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})`
 
             if (botComment) {
               github.rest.issues.updateComment({
