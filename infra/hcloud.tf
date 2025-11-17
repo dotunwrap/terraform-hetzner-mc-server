@@ -34,8 +34,12 @@ resource "hcloud_server" "mc" {
 
 resource "hcloud_volume" "mc_vol" {
   name   = "mc-vol"
-  size   = "50"
+  size   = var.volume_size
   format = "ext4"
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "hcloud_volume_attachment" "mc_vol_attach" {
