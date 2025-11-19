@@ -13,6 +13,13 @@ provider "hcloud" {
   token = var.hcloud_token
 }
 
+locals {
+  server_properties_content = templatefile("${path.module}/minecraft/server.properties", {
+    rcon_password = var.rcon_password
+    rcon_port     = var.rcon_port
+  })
+}
+
 resource "hcloud_ssh_key" "mc_ci_key" {
   name       = "mc-ci-key"
   public_key = var.public_ssh_key
@@ -80,6 +87,17 @@ resource "hcloud_firewall" "mc_fw" {
 resource "null_resource" "mc_provisioner" {
   depends_on = [hcloud_server.mc, hcloud_volume_attachment.mc_vol_attach]
 
+  triggers = {
+    server_id         = hcloud_server.mc.id
+    start_sh          = filemd5("${path.module}/minecraft/start.sh")
+    eula              = filemd5("${path.module}/minecraft/eula.txt")
+    server_properties = md5(local.server_properties_content)
+    whitelist         = filemd5("${path.module}/minecraft/whitelist.json")
+    ops               = filemd5("${path.module}/minecraft/ops.json")
+    minecraft_service = filemd5("${path.module}/services/minecraft.service")
+    mc_version        = var.mc_version
+  }
+
   provisioner "remote-exec" {
     connection {
       host        = hcloud_server.mc.ipv4_address
@@ -122,10 +140,7 @@ resource "null_resource" "mc_provisioner" {
   }
 
   provisioner "file" {
-    content = templatefile("${path.module}/minecraft/server.properties", {
-      rcon_password = var.rcon_password
-      rcon_port     = var.rcon_port
-    })
+    content     = local.server_properties_content
     destination = "/mnt/minecraft/server.properties"
     connection {
       host        = hcloud_server.mc.ipv4_address
