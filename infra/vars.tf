@@ -33,7 +33,7 @@ variable "rcon_password" {
 }
 
 variable "rcon_port" {
-  type        = string
+  type        = number
   description = "The port for RCON"
   sensitive   = true
 }

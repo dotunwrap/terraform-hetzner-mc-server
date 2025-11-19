@@ -68,7 +68,7 @@ The infrastructure is defined in `infra/hcloud.tf` and provisions:
 
 1. **Server**: Hetzner CPX21 instance running Debian 13 in Ashburn (ash) datacenter
 2. **Volume**: Persistent 50GB ext4 volume mounted at `/mnt/minecraft` (has `prevent_destroy` lifecycle rule)
-3. **Firewall**: Allows TCP ports 25565 (Minecraft) and 22 (SSH) from all sources
+3. **Firewall**: Allows TCP ports 25565 (Minecraft), ##### (Minecraft RCON -- stored in `var.rcon_port`), and 22 (SSH) from all sources
 4. **SSH Key**: CI/CD key for provisioning and management
 
 ### Provisioning Flow
@@ -78,7 +78,7 @@ The `null_resource.mc_provisioner` handles server setup in this order:
 1. Install Java 21 JRE and screen via apt
 2. Create `minecraft` user with sudo privileges
 3. Mount persistent volume to `/mnt/minecraft` with fstab entry
-4. Copy service files: `start.sh`, `eula.txt`, `minecraft.service`
+4. Copy service files: `start.sh`, `eula.txt`, `server.properties`, `whitelist.json`, `ops.json`, `minecraft.service`
 5. Download Minecraft server.jar from mcutils.com API
 6. Enable and start systemd service
 
@@ -99,6 +99,8 @@ Variables are defined in `infra/vars.tf`:
 - `private_ssh_key` (required, sensitive): SSH private key for provisioning
 - `volume_size` (default: 50): Persistent volume size in GB
 - `mc_version` (default: "1.21.10"): Minecraft version to download
+- `rcon_password` (required, sensitive): Password for connecting to RCON
+- `rcon_port` (required, sensitive): Port for connecting to RCON
 
 ## CI/CD
 
@@ -122,6 +124,8 @@ The following GitHub Actions secrets must be configured:
 - `HCLOUD_TOKEN`: Hetzner Cloud API token
 - `PUBLIC_SSH_KEY`: SSH public key for server access
 - `PRIVATE_SSH_KEY`: SSH private key for provisioning
+- `RCON_PASSWORD`: Password for connecting to RCON
+- `RCON_PORT`: Port for connecting to RCON
 
 ## Important Notes
 
