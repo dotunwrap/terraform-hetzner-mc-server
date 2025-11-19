@@ -25,18 +25,17 @@ resource "hcloud_server" "mc" {
   location    = "ash"
   ssh_keys    = [hcloud_ssh_key.mc_ci_key.id]
 
-
-
   labels = {
     role = "minecraft"
   }
 }
 
 resource "hcloud_volume" "mc_vol" {
-  name      = "mc-vol"
-  size      = var.volume_size
-  format    = "ext4"
-  server_id = hcloud_server.mc.id
+  name              = "mc-vol"
+  size              = var.volume_size
+  format            = "ext4"
+  server_id         = hcloud_server.mc.id
+  delete_protection = true
 
   lifecycle {
     prevent_destroy = true
