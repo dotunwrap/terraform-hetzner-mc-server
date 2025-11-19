@@ -200,7 +200,7 @@ resource "null_resource" "mc_provisioner" {
 
       "systemctl daemon-reload",
       "systemctl enable minecraft",
-      "systemctl start minecraft"
+      "systemctl restart minecraft"
     ]
   }
 }
