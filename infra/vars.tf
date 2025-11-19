@@ -25,3 +25,15 @@ variable "mc_version" {
   description = "The version of Minecraft"
   default     = "1.21.10"
 }
+
+variable "rcon_password" {
+  type        = string
+  description = "Password for RCON"
+  sensitive   = true
+}
+
+variable "rcon_port" {
+  type        = number
+  description = "The port for RCON"
+  sensitive   = true
+}

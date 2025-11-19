@@ -61,6 +61,13 @@ resource "hcloud_firewall" "mc_fw" {
   rule {
     direction  = "in"
     protocol   = "tcp"
+    port       = var.rcon_port
+    source_ips = ["0.0.0.0/0", "::/0"]
+  }
+
+  rule {
+    direction  = "in"
+    protocol   = "tcp"
     port       = "22"
     source_ips = ["0.0.0.0/0", "::/0"]
   }
@@ -106,6 +113,42 @@ resource "null_resource" "mc_provisioner" {
   provisioner "file" {
     source      = "${path.module}/minecraft/eula.txt"
     destination = "/mnt/minecraft/eula.txt"
+    connection {
+      host        = hcloud_server.mc.ipv4_address
+      user        = "root"
+      private_key = var.private_ssh_key
+      agent       = false
+    }
+  }
+
+  provisioner "file" {
+    content = templatefile("${path.module}/minecraft/server.properties", {
+      rcon_password = var.rcon_password
+      rcon_port     = var.rcon_port
+    })
+    destination = "/mnt/minecraft/server.properties"
+    connection {
+      host        = hcloud_server.mc.ipv4_address
+      user        = "root"
+      private_key = var.private_ssh_key
+      agent       = false
+    }
+  }
+
+  provisioner "file" {
+    source      = "${path.module}/minecraft/whitelist.json"
+    destination = "/mnt/minecraft/whitelist.json"
+    connection {
+      host        = hcloud_server.mc.ipv4_address
+      user        = "root"
+      private_key = var.private_ssh_key
+      agent       = false
+    }
+  }
+
+  provisioner "file" {
+    source      = "${path.module}/minecraft/ops.json"
+    destination = "/mnt/minecraft/ops.json"
     connection {
       host        = hcloud_server.mc.ipv4_address
       user        = "root"
