@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+    paths:
+      - infra/
 
 jobs:
   apply_terraform:
