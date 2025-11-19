@@ -5,6 +5,7 @@ After=network.target
 [Service]
 WorkingDirectory=/mnt/minecraft
 ExecStart=/mnt/minecraft/start.sh
+TimeoutStopSec=60
 User=minecraft
 Group=minecraft
 Restart=always

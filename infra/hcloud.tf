@@ -114,6 +114,7 @@ resource "null_resource" "mc_provisioner" {
       "grep -q '/dev/disk/by-id/scsi-0HC_Volume_${hcloud_volume.mc_vol.id}' /etc/fstab || echo '/dev/disk/by-id/scsi-0HC_Volume_${hcloud_volume.mc_vol.id} /mnt/minecraft ext4 defaults 0 2' >> /etc/fstab",
       "systemctl daemon-reload",
       "mount /mnt/minecraft || true",
+      "systemctl stop minecraft || echo 'Service not running'",
     ]
   }
 
