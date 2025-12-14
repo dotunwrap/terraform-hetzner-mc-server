@@ -1,0 +1,33 @@
+name: Destroy Infra
+
+on:
+  workflow_dispatch:
+
+jobs:
+  destroy_infra:
+    name: Destroy Infra
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    env:
+      TF_TOKEN_app_terraform_io: ${{ secrets.TFCLOUD_TOKEN }}
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v5
+
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Run terraform init
+        working-directory: infra/
+        run: terraform init -input=false
+
+      - name: Run terraform destroy
+        working-directory: infra/
+        env:
+          TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
+          TF_VAR_public_ssh_key: ${{ secrets.PUBLIC_SSH_KEY }}
+          TF_VAR_private_ssh_key: ${{ secrets.PRIVATE_SSH_KEY }}
+          TF_VAR_rcon_password: ${{ secrets.RCON_PASSWORD }}
+          TF_VAR_rcon_port: ${{ secrets.RCON_PORT }}
+        run: terraform destroy -auto-approve -no-color
