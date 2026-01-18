@@ -11,7 +11,13 @@
     {
       devShells.default = pkgs.mkShell {
         packages = builtins.attrValues {
-          inherit (pkgs) terraform terraform-ls terraform-docs;
+          inherit (pkgs)
+            terraform
+            terraform-ls
+            terraform-docs
+            gh
+            just
+            ;
         };
       };
     };
