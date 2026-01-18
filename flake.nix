@@ -1,5 +1,5 @@
 {
-  description = "A Minecraft server for me and my boyfriend <github.com/jlevere> hosted on Hetzner";
+  description = "A terraform module for creating Minecraft servers on Hetzner.";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";

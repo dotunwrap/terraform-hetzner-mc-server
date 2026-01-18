@@ -45,13 +45,6 @@ jobs:
     if: github.event_name == 'pull_request'
     permissions:
       pull-requests: write
-    env:
-      TF_TOKEN_app_terraform_io: ${{ secrets.TFCLOUD_TOKEN }}
-      TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
-      TF_VAR_public_ssh_key: ${{ secrets.PUBLIC_SSH_KEY }}
-      TF_VAR_private_ssh_key: ${{ secrets.PRIVATE_SSH_KEY }}
-      TF_VAR_rcon_password: ${{ secrets.RCON_PASSWORD }}
-      TF_VAR_rcon_port: ${{ secrets.RCON_PORT }}
     steps:
       - name: Clone repository
         uses: actions/checkout@v5
@@ -61,19 +54,13 @@ jobs:
 
       - name: Run terraform init
         id: init
-        working-directory: infra/
+        working-directory: module/
         run: terraform init -input=false
 
       - name: Run terraform validate
         id: validate
-        working-directory: infra/
+        working-directory: module/
         run: terraform validate -no-color
-
-      - name: Run terraform plan
-        id: plan
-        working-directory: infra/
-        run: terraform plan -no-color -input=false
-        continue-on-error: true
 
       - name: Generate comment
         uses: actions/github-script@v7
@@ -96,15 +83,6 @@ jobs:
 
             \`\`\`\n
             ${{ steps.validate.outputs.stdout }}
-            \`\`\`
-
-            </details>
-
-            #### Terraform Plan \`${{ steps.plan.outcome }}\`
-            <details><summary>Show Plan</summary>
-
-            \`\`\`\n
-            ${process.env.PLAN}
             \`\`\`
 
             </details>
