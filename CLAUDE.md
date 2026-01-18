@@ -4,132 +4,131 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Minecraft server Infrastructure-as-Code (IaC) project that deploys vanilla Minecraft 1.21.10 on Hetzner Cloud using Terraform. The infrastructure provisions a dedicated server with persistent storage for game data.
+This is a Terraform module for provisioning and deploying Minecraft servers on Hetzner Cloud. The module handles infrastructure provisioning, server configuration, and automatic deployment of Minecraft server software (vanilla, fabric, or forge).
 
-## Development Environment
+## Development Setup
 
-This project uses Nix flakes for reproducible development environments and tooling.
-
-### Setup
+This project uses Nix flakes for development environment management.
 
 ```bash
-# Enter the development environment
+# Enter development shell (provides terraform, terraform-ls, terraform-docs)
 nix develop
 
-# Or use direnv (if configured)
+# Or use direnv
 direnv allow
 ```
 
-The dev shell provides: `terraform`, `terraform-ls`, `terraform-docs`
-
 ## Common Commands
+
+### Formatting
+
+```bash
+# Format both Nix and Terraform code
+just fmt
+
+# Or separately:
+nix fmt
+cd module && terraform fmt
+```
 
 ### Terraform Operations
 
-All Terraform operations must be run from the `infra/` directory:
+All Terraform operations should be run from the `module/` directory:
 
 ```bash
-# Initialize Terraform (required before first use)
-cd infra/
-terraform init
-
-# Validate configuration
-terraform validate
-
-# Plan changes
-terraform plan
-
-# Apply changes (deployment)
-terraform apply
-
-# Format Terraform files
-terraform fmt
+# Update provider lock file for all platforms
+just tflock
 ```
 
-### Linting and Formatting
+### Testing
 
 ```bash
-# Run all Nix checks (includes formatting checks)
-nix flake check
-
-# Format Nix files
-nix fmt
-
-# Format Terraform files
-cd infra/
-terraform fmt
+# Run all Nix checks (formatting and validation)
+nix flake check --keep-going
 ```
+
+The flake defines two checks in `flake/checks.nix`:
+- `nixfmt`: Validates Nix code formatting
+- `terraformfmt`: Validates Terraform code formatting in `module/`
 
 ## Architecture
 
-### Infrastructure Components
+### Module Structure
 
-The infrastructure is defined in `infra/hcloud.tf` and provisions:
+The Terraform module is located in the `module/` directory and provisions:
 
-1. **Server**: Hetzner CPX21 instance running Debian 13 in Ashburn (ash) datacenter
-2. **Volume**: Persistent 50GB ext4 volume mounted at `/mnt/minecraft` (has `prevent_destroy` lifecycle rule)
-3. **Firewall**: Allows TCP ports 25565 (Minecraft), ##### (Minecraft RCON -- stored in `var.rcon_port`), and 22 (SSH) from all sources
-4. **SSH Key**: CI/CD key for provisioning and management
+1. **Hetzner Cloud Server** (`hcloud_server.mc`): Debian 13 server running Minecraft
+2. **Persistent Volume** (`hcloud_volume.mc_vol`): EXT4 volume mounted at `/mnt/minecraft` with delete protection and lifecycle prevent_destroy
+3. **SSH Key** (`hcloud_ssh_key.mc_ci_key`): For server access
+4. **Firewall** (`hcloud_firewall.mc_fw`): Opens ports for Minecraft (default 25565), RCON (default 25575), and SSH (22)
+5. **Provisioner** (`null_resource.mc_provisioner`): Handles server configuration and Minecraft installation
 
 ### Provisioning Flow
 
-The `null_resource.mc_provisioner` handles server setup in this order:
+The `null_resource.mc_provisioner` in `module/main.tf:158-299` orchestrates the deployment using `remote-exec` and `file` provisioners:
 
-1. Install Java 21 JRE and screen via apt
-2. Create `minecraft` user with sudo privileges
-3. Mount persistent volume to `/mnt/minecraft` with fstab entry
-4. Copy service files: `start.sh`, `eula.txt`, `server.properties`, `whitelist.json`, `ops.json`, `minecraft.service`
-5. Download Minecraft server.jar from mcutils.com API
-6. Enable and start systemd service
+1. Installs Java 21, creates `minecraft` user, mounts persistent volume
+2. Uploads configuration files: `start.sh`, `eula.txt`, `server.properties`, `whitelist.json`, `ops.json`
+3. Uploads systemd service file to `/etc/systemd/system/minecraft.service`
+4. If mods are specified (`var.mc_mods`), uploads them to `/mnt/minecraft/mods/` as base64-encoded files
+5. Downloads Minecraft server JAR from `mcutils.com` API based on `mc_server_type` and `mc_version`
+6. Starts Minecraft as a systemd service
 
-### Minecraft Runtime
+### Re-provisioning Triggers
 
-- **Service**: Managed via systemd (`minecraft.service`)
-- **Working Directory**: `/mnt/minecraft`
-- **User**: `minecraft:minecraft`
-- **Java Memory**: 2GB min (-Xms2G), 3GB max (-Xmx3G)
-- **Restart Policy**: Always restart on failure
+The provisioner uses triggers (`module/main.tf:161-172`) to force re-provisioning when:
+- Server ID changes
+- Configuration files change (`start.sh`, `eula.txt`, `server.properties`, `whitelist.json`, `ops.json`, `minecraft.service`)
+- Server type or version changes
+- Mods list changes
 
-### Configuration Variables
+### Server Properties Management
 
-Variables are defined in `infra/vars.tf`:
+Server properties are managed via a merge strategy (`module/main.tf:76-82`):
+- Default properties defined in `local.default_server_properties` (lines 17-75)
+- User overrides via `var.server_properties` map
+- Merged result written to `server.properties` file
+- The `var.server_properties` variable validates that only known properties are used (lines 75-84)
 
-- `hcloud_token` (required): Hetzner Cloud API token
-- `public_ssh_key` (required): SSH public key for server access
-- `private_ssh_key` (required, sensitive): SSH private key for provisioning
-- `volume_size` (default: 50): Persistent volume size in GB
-- `mc_version` (default: "1.21.10"): Minecraft version to download
-- `rcon_password` (required, sensitive): Password for connecting to RCON
-- `rcon_port` (required, sensitive): Port for connecting to RCON
+### User Management
 
-## CI/CD
+Two types of users can be configured:
+- `var.whitelist_users`: List of `{name, uuid}` objects for whitelist.json
+- `var.op_users`: List of `{uuid, name, level, bypassesPlayerLimit}` objects for ops.json
 
-### Continuous Integration (.github/workflows/ci.yml)
+### Systemd Service
 
-Runs on PRs and main branch pushes:
+The Minecraft server runs as a systemd service (`module/services/minecraft.service`):
+- Runs as `minecraft` user
+- Working directory: `/mnt/minecraft`
+- Executes `start.sh` which runs Java with 2GB min / 3GB max heap
+- Auto-restarts on failure
+- 60-second timeout on stop
 
-1. **Nix checks**: Runs `nix flake check` on macOS and Ubuntu (formatting validation)
-2. **Terraform plan**: Generates plan and posts comment to PRs with init/validate/plan output
+### CI/CD
 
-### Continuous Deployment (.github/workflows/cd.yml)
+The `.github/workflows/ci.yml` runs on PRs and pushes to main:
+- Executes `nix flake check` on macOS and Ubuntu
+- On PRs: runs `terraform init` and `terraform validate`, posts results as PR comment
 
-Deploys to production on main branch pushes when `infra/` changes:
+Note: The git status shows deleted files in `infra/` directory - the Terraform code has been refactored into the `module/` directory structure.
 
-- Runs `terraform apply -auto-approve` to deploy infrastructure changes
+## Module Variables
 
-### Required Secrets
+Key variables defined in `module/vars.tf`:
+- `hcloud_token`: Hetzner Cloud API token (required)
+- `name`: Project name prefix for resources (required)
+- `public_ssh_key` / `private_ssh_key`: SSH keys for server access (required)
+- `server_type`: Hetzner server type (default: "cpx21")
+- `server_location`: Hetzner datacenter location (required, e.g., "ash")
+- `volume_size`: Persistent volume size in GB (default: 50)
+- `mc_server_type`: Server software type - "vanilla", "fabric", or "forge" (default: "vanilla")
+- `mc_version`: Minecraft version (default: "1.21.10")
+- `mc_mods`: List of .zip mod files to install (default: [])
+- `server_properties`: Map of Minecraft server.properties overrides (default: {})
 
-The following GitHub Actions secrets must be configured:
+## Module Outputs
 
-- `HCLOUD_TOKEN`: Hetzner Cloud API token
-- `PUBLIC_SSH_KEY`: SSH public key for server access
-- `PRIVATE_SSH_KEY`: SSH private key for provisioning
-- `RCON_PASSWORD`: Password for connecting to RCON
-- `RCON_PORT`: Port for connecting to RCON
-
-## Important Notes
-
-- The persistent volume has `prevent_destroy = true` to protect game data
-- Server provisioning uses remote-exec and file provisioners over SSH
-- Minecraft version can be changed by modifying the `mc_version` variable
-- All infrastructure changes to main automatically trigger deployment
+Defined in `module/outputs.tf`:
+- `server_ip`: Public IPv4 address of the Minecraft server
+- `volume_id`: ID of the persistent volume

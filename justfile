@@ -1,5 +1,5 @@
 tflock:
-  cd infra && terraform providers lock \
+  cd module && terraform providers lock \
     -platform=windows_amd64 \
     -platform=darwin_amd64 \
     -platform=linux_amd64 \
@@ -8,10 +8,4 @@ tflock:
 
 fmt:
   nix fmt
-  cd infra && terraform fmt
-
-apply:
-  cd infra && terraform apply
-
-plan:
-  cd infra && terraform plan
+  cd module && terraform fmt

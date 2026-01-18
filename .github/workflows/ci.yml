@@ -61,19 +61,13 @@ jobs:
 
       - name: Run terraform init
         id: init
-        working-directory: infra/
+        working-directory: module/
         run: terraform init -input=false
 
       - name: Run terraform validate
         id: validate
-        working-directory: infra/
+        working-directory: module/
         run: terraform validate -no-color
-
-      - name: Run terraform plan
-        id: plan
-        working-directory: infra/
-        run: terraform plan -no-color -input=false
-        continue-on-error: true
 
       - name: Generate comment
         uses: actions/github-script@v7
@@ -96,15 +90,6 @@ jobs:
 
             \`\`\`\n
             ${{ steps.validate.outputs.stdout }}
-            \`\`\`
-
-            </details>
-
-            #### Terraform Plan \`${{ steps.plan.outcome }}\`
-            <details><summary>Show Plan</summary>
-
-            \`\`\`\n
-            ${process.env.PLAN}
             \`\`\`
 
             </details>

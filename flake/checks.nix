@@ -15,7 +15,7 @@
           ${pkgs.nixfmt}/bin/nixfmt --check ${self} < /dev/null | tee $out
         '';
         terraformfmt = pkgs.runCommand "check-terraformfmt-${self.rev or "dirty"}" { } ''
-          ${pkgs.terraform}/bin/terraform fmt --check ${self}/infra/ < /dev/null | tee $out
+          ${pkgs.terraform}/bin/terraform fmt --check ${self}/module/ < /dev/null | tee $out
         '';
       };
     };
