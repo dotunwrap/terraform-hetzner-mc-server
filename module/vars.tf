@@ -55,14 +55,14 @@ variable "mc_version" {
 
 variable "mc_mods" {
   type        = list(string)
-  description = "List of Minecraft mod archives to install (.zip)"
+  description = "List of Minecraft mod archives to install (.jar)"
   default     = []
 
   validation {
     condition = alltrue([
-      for f in var.mc_mods : can(fileexists(f)) && regex(".*\\.zip$", f)
+      for f in var.mc_mods : can(fileexists(f)) && regex(".*\\.jar$", f)
     ])
-    error_message = "All mods must exist and have a .zip extension"
+    error_message = "All mods must exist and have a .jar extension"
   }
 }
 
