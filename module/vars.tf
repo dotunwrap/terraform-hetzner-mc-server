@@ -60,7 +60,7 @@ variable "mc_mods" {
 
   validation {
     condition = alltrue([
-      for f in var.mc_mods : can(fileexists(f)) && regex(".*\\.jar$", f)
+      for f in var.mc_mods : can(fileexists(f)) && can(regex(".*\\.jar$", f))
     ])
     error_message = "All mods must exist and have a .jar extension"
   }
