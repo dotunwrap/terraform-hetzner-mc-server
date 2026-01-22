@@ -296,14 +296,14 @@ EOT
       "chmod +x /mnt/minecraft/start.sh",
       "chmod 644 /etc/systemd/system/minecraft.service",
 
-      "sudo -u minecraft wget -O /mnt/minecraft/server.jar https://mcutils.com/api/server-jars/${var.mc_server_type}/${var.mc_version}/download || exit 1",
-      "test -f /mnt/minecraft/server.jar || exit 1",
+      "sudo -u minecraft wget -O /mnt/minecraft/${var.mc_server_type == "forge" ? "forge-installer.jar" : "server.jar"} https://mcutils.com/api/server-jars/${var.mc_server_type}/${var.mc_version}/download || exit 1",
+      var.mc_server_type == "forge" ? "cd /mnt/minecraft && sudo -u minecraft java -jar forge-installer.jar --installServer && rm -f forge-installer.jar" : "test -f /mnt/minecraft/server.jar || exit 1",
 
       "systemctl daemon-reload",
       "systemctl enable minecraft",
       "systemctl restart minecraft",
       "sleep 10",
-      "systemctl is-active minecraft || (journalctl -u minecraft -n 50 && exit 1)"
+      "systemctl is-active minecraft || (journalctl --no-pager -u minecraft -n 50 && exit 1)"
     ]
   }
 }
