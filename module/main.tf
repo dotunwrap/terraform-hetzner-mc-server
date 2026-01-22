@@ -116,6 +116,7 @@ resource "hcloud_volume" "mc_vol" {
   name              = "${var.name}-vol"
   size              = var.volume_size
   format            = "ext4"
+  location          = var.server_location
   delete_protection = true
 
   lifecycle {
