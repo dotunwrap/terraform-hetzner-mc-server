@@ -176,6 +176,13 @@ resource "null_resource" "mc_init_provisioner" {
     inline = [
       "timeout 300 bash -c 'until cloud-init status --wait 2>/dev/null; do sleep 5; done' || echo 'cloud-init wait skipped'",
       "apt-get update && apt-get install -y openjdk-21-jre-headless screen unzip",
+
+      "fallocate -l ${var.server_swap_size}G /swapfile",
+      "chmod 600 /swapfile",
+      "mkswap /swapfile",
+      "swapon /swapfile",
+      "echo '/swapfile none swap sw 0 0' | tee -a /etc/fstab",
+
       "useradd -m -s /bin/bash minecraft || echo 'User already exists'",
       "mkdir -p /mnt/minecraft",
       "grep -q '/dev/disk/by-id/scsi-0HC_Volume_${hcloud_volume.mc_vol.id}' /etc/fstab || echo '/dev/disk/by-id/scsi-0HC_Volume_${hcloud_volume.mc_vol.id} /mnt/minecraft ext4 defaults 0 2' >> /etc/fstab",

@@ -30,6 +30,12 @@ variable "server_location" {
   description = "The location for the Hetzner server to run in (e.g. ash)"
 }
 
+variable "server_swap_size" {
+  type        = number
+  description = "Size of the swap to enable in GB"
+  default     = 4
+}
+
 variable "volume_size" {
   type        = number
   description = "Size of persistent volume in GB"
