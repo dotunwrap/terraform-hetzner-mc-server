@@ -87,6 +87,7 @@ locals {
   ])
   whitelist_json_content = jsonencode(var.whitelist_users)
   ops_json_content       = jsonencode(var.op_users)
+  start_sh_content       = templatefile("${path.module}/minecraft/start.tftpl", { memsize = var.mc_server_memsize })
 }
 
 resource "hcloud_ssh_key" "mc_ci_key" {
@@ -225,7 +226,7 @@ resource "null_resource" "mc_file_provisioner" {
   triggers = {
     server_id         = hcloud_server.mc.id
     vol_id            = hcloud_volume.mc_vol.id
-    start_sh          = filemd5("${path.module}/minecraft/start.sh")
+    start_sh          = md5(local.start_sh_content)
     eula              = filemd5("${path.module}/minecraft/eula.txt")
     server_properties = md5(local.server_properties_content)
     whitelist         = md5(local.whitelist_json_content)
@@ -241,7 +242,7 @@ resource "null_resource" "mc_file_provisioner" {
   }
 
   provisioner "file" {
-    source      = "${path.module}/minecraft/start.sh"
+    content     = local.start_sh_content
     destination = "/mnt/minecraft/start.sh"
   }
 
@@ -325,7 +326,7 @@ resource "null_resource" "mc_start_provisioner" {
   triggers = {
     server_id         = hcloud_server.mc.id
     vol_id            = hcloud_volume.mc_vol.id
-    start_sh          = filemd5("${path.module}/minecraft/start.sh")
+    start_sh          = md5(local.start_sh_content)
     eula              = filemd5("${path.module}/minecraft/eula.txt")
     server_properties = md5(local.server_properties_content)
     whitelist         = md5(local.whitelist_json_content)

@@ -58,6 +58,12 @@ variable "mc_modloader_version" {
   default     = ""
 }
 
+variable "mc_server_memsize" {
+  type        = number
+  description = "The number of gigabytes of memory to give to the JVM"
+  default     = 3
+}
+
 variable "mc_mods" {
   type        = list(string)
   description = "List of Minecraft mod archives to install (.jar)"
