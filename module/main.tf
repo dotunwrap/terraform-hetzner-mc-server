@@ -215,7 +215,6 @@ resource "null_resource" "mc_jar_provisioner" {
         "mkdir /mnt/minecraft/mods"
       ]
       : ["sudo -u minecraft wget -O /mnt/minecraft/server.jar https://mcutils.com/api/server-jars/vanilla/${var.mc_version}/download || exit 1"],
-      # var.mc_server_type == "forge" ? ["cd /mnt/minecraft && sudo -u minecraft java -jar forge-installer.jar --installServer && rm -f forge-installer.jar"] : [],
     ])
   }
 }
@@ -272,8 +271,31 @@ resource "null_resource" "mc_file_provisioner" {
   }
 }
 
-resource "null_resource" "mc_mod_provisioner" {
+resource "null_resource" "mc_mod_cleanup_provisioner" {
   depends_on = [null_resource.mc_file_provisioner]
+
+  triggers = {
+    server_id = hcloud_server.mc.id
+    vol_id    = hcloud_volume.mc_vol.id
+    mods      = md5(join("", [for m in var.mc_mods : filemd5(m)]))
+  }
+
+  connection {
+    host        = hcloud_server.mc.ipv4_address
+    user        = "root"
+    private_key = var.private_ssh_key
+    agent       = false
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "rm -rf /mnt/minecraft/mods/*"
+    ]
+  }
+}
+
+resource "null_resource" "mc_mod_provisioner" {
+  depends_on = [null_resource.mc_mod_cleanup_provisioner]
 
   for_each = toset(var.mc_mods)
 
