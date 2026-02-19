@@ -2,133 +2,110 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Project Overview
+## Overview
 
-This is a Terraform module for provisioning and deploying Minecraft servers on Hetzner Cloud. The module handles infrastructure provisioning, server configuration, and automatic deployment of Minecraft server software (vanilla, fabric, or forge).
+This is a Terraform module for provisioning and deploying Minecraft servers on Hetzner Cloud. The module creates a Debian-based server with a persistent volume, installs Java and dependencies, downloads the Minecraft server JAR, and configures it as a systemd service.
 
-## Development Setup
-
-This project uses Nix flakes for development environment management.
-
-```bash
-# Enter development shell (provides terraform, terraform-ls, terraform-docs)
-nix develop
-
-# Or use direnv
-direnv allow
-```
-
-## Common Commands
+## Development Commands
 
 ### Formatting
-
 ```bash
-# Format both Nix and Terraform code
-just fmt
-
-# Or separately:
-nix fmt
-cd module && terraform fmt
+just fmt            # Format both Nix and Terraform code
+nix fmt             # Format Nix code only
+terraform fmt       # Format Terraform code only (run from module/)
 ```
 
-### Terraform Operations
-
-All Terraform operations should be run from the `module/` directory:
-
+### Validation and Checks
 ```bash
-# Update provider lock file for all platforms
-just tflock
+nix flake check                     # Run all Nix checks (nixfmt + terraformfmt)
+cd module && terraform init         # Initialize Terraform
+cd module && terraform validate     # Validate Terraform configuration
 ```
 
-### Testing
-
+### Terraform Provider Locks
 ```bash
-# Run all Nix checks (formatting and validation)
-nix flake check --keep-going
+just tflock         # Lock providers for multiple platforms (windows, darwin, linux on amd64/arm64)
 ```
 
-The flake defines two checks in `flake/checks.nix`:
-- `nixfmt`: Validates Nix code formatting
-- `terraformfmt`: Validates Terraform code formatting in `module/`
+### Development Environment
+```bash
+nix develop         # Enter development shell with terraform, terraform-ls, terraform-docs, gh, just
+```
 
 ## Architecture
 
-### Module Structure
+### Provisioning Pipeline
 
-The Terraform module is located in the `module/` directory and provisions:
+The module uses a multi-stage provisioning pipeline with `null_resource` resources that depend on each other:
 
-1. **Hetzner Cloud Server** (`hcloud_server.mc`): Debian 13 server running Minecraft
-2. **Persistent Volume** (`hcloud_volume.mc_vol`): EXT4 volume mounted at `/mnt/minecraft` with delete protection and lifecycle prevent_destroy
-3. **SSH Key** (`hcloud_ssh_key.mc_ci_key`): For server access
-4. **Firewall** (`hcloud_firewall.mc_fw`): Opens ports for Minecraft (default 25565), RCON (default 25575), and SSH (22)
-5. **Provisioner** (`null_resource.mc_provisioner`): Handles server configuration and Minecraft installation
+1. **mc_init_provisioner**: Initializes the server after creation
+   - Waits for cloud-init to complete
+   - Installs Java 21, screen, unzip
+   - Creates minecraft user
+   - Mounts the persistent volume at `/mnt/minecraft`
+   - Stops any existing minecraft service
 
-### Provisioning Flow
+2. **mc_jar_provisioner**: Downloads the Minecraft server JAR
+   - Triggers on changes to: server type, version, or modloader version
+   - For vanilla: downloads from mcutils.com API
+   - For modded (forge): downloads from mcjars.app as a zip, then unzips
 
-The `null_resource.mc_provisioner` in `module/main.tf:158-299` orchestrates the deployment using `remote-exec` and `file` provisioners:
+3. **mc_file_provisioner**: Provisions configuration files
+   - Uploads: start.sh, eula.txt, server.properties, whitelist.json, ops.json
+   - Installs minecraft.service systemd unit
+   - Triggers on content changes to any of these files
 
-1. Installs Java 21, creates `minecraft` user, mounts persistent volume
-2. Uploads configuration files: `start.sh`, `eula.txt`, `server.properties`, `whitelist.json`, `ops.json`
-3. Uploads systemd service file to `/etc/systemd/system/minecraft.service`
-4. If mods are specified (`var.mc_mods`), uploads them to `/mnt/minecraft/mods/` as base64-encoded files
-5. Downloads Minecraft server JAR from `mcutils.com` API based on `mc_server_type` and `mc_version`
-6. Starts Minecraft as a systemd service
+4. **mc_mod_provisioner**: Uploads mod files (if any)
+   - Uses `for_each` to provision each mod file in `var.mc_mods`
+   - Uploads to `/mnt/minecraft/mods/`
+   - Only runs if mods are specified
 
-### Re-provisioning Triggers
+5. **mc_start_provisioner**: Starts the Minecraft service
+   - Sets ownership and permissions
+   - Enables and restarts minecraft.service
+   - Verifies service is active or exits with journal logs
 
-The provisioner uses triggers (`module/main.tf:161-172`) to force re-provisioning when:
-- Server ID changes
-- Configuration files change (`start.sh`, `eula.txt`, `server.properties`, `whitelist.json`, `ops.json`, `minecraft.service`)
-- Server type or version changes
-- Mods list changes
+### Server Configuration
 
-### Server Properties Management
+The module merges user-provided `server_properties` with comprehensive defaults defined in `local.default_server_properties` (module/main.tf:21-79). The validation in module/vars.tf:80-89 ensures only valid properties are accepted.
 
-Server properties are managed via a merge strategy (`module/main.tf:76-82`):
-- Default properties defined in `local.default_server_properties` (lines 17-75)
-- User overrides via `var.server_properties` map
-- Merged result written to `server.properties` file
-- The `var.server_properties` variable validates that only known properties are used (lines 75-84)
+### Volume Management
 
-### User Management
+The persistent volume (module/main.tf:109-119) has:
+- `delete_protection = true`
+- `lifecycle { prevent_destroy = true }`
 
-Two types of users can be configured:
-- `var.whitelist_users`: List of `{name, uuid}` objects for whitelist.json
-- `var.op_users`: List of `{uuid, name, level, bypassesPlayerLimit}` objects for ops.json
+This protects world data from accidental destruction. The volume must be explicitly unprotected before it can be deleted.
 
-### Systemd Service
+### Start Script Logic
 
-The Minecraft server runs as a systemd service (`module/services/minecraft.service`):
-- Runs as `minecraft` user
-- Working directory: `/mnt/minecraft`
-- Executes `start.sh` which runs Java with 2GB min / 3GB max heap
-- Auto-restarts on failure
-- 60-second timeout on stop
+The start script (module/minecraft/start.sh) handles both vanilla and Forge servers:
+- If `run.sh` exists (Forge creates this), it uses that with custom JVM args from `user_jvm_args.txt`
+- Otherwise, runs `server.jar` directly with JVM flags
 
-### CI/CD
+### Firewall Rules
 
-The `.github/workflows/ci.yml` runs on PRs and pushes to main:
-- Executes `nix flake check` on macOS and Ubuntu
-- On PRs: runs `terraform init` and `terraform validate`, posts results as PR comment
+The firewall (module/main.tf:127-157) automatically:
+- Opens the Minecraft server port (defaults to 25565)
+- Conditionally opens RCON port if `enable-rcon` is true
+- Always allows SSH on port 22
+- Applies rules to servers with `role=minecraft` label
 
-Note: The git status shows deleted files in `infra/` directory - the Terraform code has been refactored into the `module/` directory structure.
+## Important Notes
 
-## Module Variables
+### Mod File Validation
+The `mc_mods` variable (module/vars.tf:61-72) validates that:
+- All mod files exist
+- All mod files have `.jar` extension
 
-Key variables defined in `module/vars.tf`:
-- `hcloud_token`: Hetzner Cloud API token (required)
-- `name`: Project name prefix for resources (required)
-- `public_ssh_key` / `private_ssh_key`: SSH keys for server access (required)
-- `server_type`: Hetzner server type (default: "cpx21")
-- `server_location`: Hetzner datacenter location (required, e.g., "ash")
-- `volume_size`: Persistent volume size in GB (default: 50)
-- `mc_server_type`: Server software type - "vanilla", "fabric", or "forge" (default: "vanilla")
-- `mc_version`: Minecraft version (default: "1.21.10")
-- `mc_mods`: List of .zip mod files to install (default: [])
-- `server_properties`: Map of Minecraft server.properties overrides (default: {})
+Note: Previously the validation expected `.zip` files, but this was corrected to `.jar` in recent commits.
 
-## Module Outputs
+### Provisioner Triggers
+All provisioners use `triggers` blocks to determine when to re-run. When modifying the module, ensure triggers include all relevant dependencies to avoid stale state.
 
-Defined in `module/outputs.tf`:
-- `server_ip`: Public IPv4 address of the Minecraft server
-- `volume_id`: ID of the persistent volume
+### Server Types
+Currently supports:
+- `vanilla`: Standard Minecraft server
+- `forge`: Forge modded server
+
+The validation is in module/vars.tf:44-47. When adding new server types, update both the validation and the download logic in `mc_jar_provisioner`.

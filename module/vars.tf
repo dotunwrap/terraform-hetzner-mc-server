@@ -38,19 +38,24 @@ variable "volume_size" {
 
 variable "mc_server_type" {
   type        = string
-  description = "The type of server to run (e.g. vanilla, fabric, forge)"
+  description = "The type of server to run (e.g. vanilla, forge)"
   default     = "vanilla"
 
   validation {
-    condition     = contains(["vanilla", "fabric", "forge"], var.mc_server_type)
-    error_message = "mc_server_type must be one of: vanilla, fabric, forge"
+    condition     = contains(["vanilla", "forge"], var.mc_server_type)
+    error_message = "mc_server_type must be one of: vanilla, forge"
   }
 }
 
 variable "mc_version" {
   type        = string
   description = "The version of Minecraft"
-  default     = "1.21.10"
+}
+
+variable "mc_modloader_version" {
+  type        = string
+  description = "The version of the Minecraft modloader"
+  default     = ""
 }
 
 variable "mc_mods" {

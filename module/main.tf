@@ -87,12 +87,6 @@ locals {
   ])
   whitelist_json_content = jsonencode(var.whitelist_users)
   ops_json_content       = jsonencode(var.op_users)
-  mods_base64 = [
-    for f in var.mc_mods : {
-      filename = basename(f)
-      content  = filebase64(f)
-    }
-  ]
 }
 
 resource "hcloud_ssh_key" "mc_ci_key" {
@@ -162,11 +156,152 @@ resource "hcloud_firewall" "mc_fw" {
   }
 }
 
-resource "null_resource" "mc_provisioner" {
+resource "null_resource" "mc_init_provisioner" {
   depends_on = [hcloud_server.mc, hcloud_volume_attachment.mc_vol_attach]
 
   triggers = {
+    server_id = hcloud_server.mc.id
+    vol_id    = hcloud_volume.mc_vol.id
+  }
+
+  connection {
+    host        = hcloud_server.mc.ipv4_address
+    user        = "root"
+    private_key = var.private_ssh_key
+    agent       = false
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "timeout 300 bash -c 'until cloud-init status --wait 2>/dev/null; do sleep 5; done' || echo 'cloud-init wait skipped'",
+      "apt-get update && apt-get install -y openjdk-21-jre-headless screen unzip",
+      "useradd -m -s /bin/bash minecraft || echo 'User already exists'",
+      "mkdir -p /mnt/minecraft",
+      "grep -q '/dev/disk/by-id/scsi-0HC_Volume_${hcloud_volume.mc_vol.id}' /etc/fstab || echo '/dev/disk/by-id/scsi-0HC_Volume_${hcloud_volume.mc_vol.id} /mnt/minecraft ext4 defaults 0 2' >> /etc/fstab",
+      "systemctl daemon-reload",
+      "mount /mnt/minecraft || true",
+      "systemctl stop minecraft || echo 'Service not running'",
+    ]
+  }
+}
+
+resource "null_resource" "mc_jar_provisioner" {
+  depends_on = [null_resource.mc_init_provisioner]
+
+  triggers = {
+    server_id            = hcloud_server.mc.id
+    vol_id               = hcloud_volume.mc_vol.id
+    mc_server_type       = var.mc_server_type
+    mc_version           = var.mc_version
+    mc_modloader_version = var.mc_modloader_version
+  }
+
+  connection {
+    host        = hcloud_server.mc.ipv4_address
+    user        = "root"
+    private_key = var.private_ssh_key
+    agent       = false
+  }
+
+  provisioner "remote-exec" {
+    inline = flatten([
+      [
+        "chown -R minecraft:minecraft /mnt/minecraft",
+      ],
+      var.mc_server_type != "vanilla"
+      ? [
+        "sudo -u minecraft wget -O /mnt/minecraft/server.jar.zip https://files.mcjars.app/${var.mc_server_type}/${var.mc_version}/${var.mc_modloader_version}/1/server.jar.zip ||  exit 1",
+        "unzip /mnt/minecraft/server.jar.zip -d /mnt/minecraft && rm /mnt/minecraft/server.jar.zip"
+      ]
+      : ["sudo -u minecraft wget -O /mnt/minecraft/server.jar https://mcutils.com/api/server-jars/vanilla/${var.mc_version}/download || exit 1"],
+      # var.mc_server_type == "forge" ? ["cd /mnt/minecraft && sudo -u minecraft java -jar forge-installer.jar --installServer && rm -f forge-installer.jar"] : [],
+    ])
+  }
+}
+
+resource "null_resource" "mc_file_provisioner" {
+  depends_on = [null_resource.mc_jar_provisioner]
+
+  triggers = {
     server_id         = hcloud_server.mc.id
+    vol_id            = hcloud_volume.mc_vol.id
+    start_sh          = filemd5("${path.module}/minecraft/start.sh")
+    eula              = filemd5("${path.module}/minecraft/eula.txt")
+    server_properties = md5(local.server_properties_content)
+    whitelist         = md5(local.whitelist_json_content)
+    ops               = md5(local.ops_json_content)
+    minecraft_service = filemd5("${path.module}/services/minecraft.service")
+  }
+
+  connection {
+    host        = hcloud_server.mc.ipv4_address
+    user        = "root"
+    private_key = var.private_ssh_key
+    agent       = false
+  }
+
+  provisioner "file" {
+    source      = "${path.module}/minecraft/start.sh"
+    destination = "/mnt/minecraft/start.sh"
+  }
+
+  provisioner "file" {
+    source      = "${path.module}/minecraft/eula.txt"
+    destination = "/mnt/minecraft/eula.txt"
+  }
+
+  provisioner "file" {
+    content     = local.server_properties_content
+    destination = "/mnt/minecraft/server.properties"
+  }
+
+  provisioner "file" {
+    content     = local.whitelist_json_content
+    destination = "/mnt/minecraft/whitelist.json"
+  }
+
+  provisioner "file" {
+    content     = local.ops_json_content
+    destination = "/mnt/minecraft/ops.json"
+  }
+
+  provisioner "file" {
+    source      = "${path.module}/services/minecraft.service"
+    destination = "/etc/systemd/system/minecraft.service"
+  }
+}
+
+resource "null_resource" "mc_mod_provisioner" {
+  depends_on = [null_resource.mc_file_provisioner]
+
+  for_each = toset(var.mc_mods)
+
+  triggers = {
+    server_id = hcloud_server.mc.id
+    vol_id    = hcloud_volume.mc_vol.id
+    mods      = md5(join("", [for m in var.mc_mods : filemd5(m)]))
+  }
+
+  connection {
+    host        = hcloud_server.mc.ipv4_address
+    user        = "root"
+    private_key = var.private_ssh_key
+    agent       = false
+  }
+
+  provisioner "file" {
+    source      = each.value
+    destination = "/mnt/minecraft/mods/${basename(each.value)}"
+  }
+}
+
+
+resource "null_resource" "mc_start_provisioner" {
+  depends_on = [null_resource.mc_mod_provisioner]
+
+  triggers = {
+    server_id         = hcloud_server.mc.id
+    vol_id            = hcloud_volume.mc_vol.id
     start_sh          = filemd5("${path.module}/minecraft/start.sh")
     eula              = filemd5("${path.module}/minecraft/eula.txt")
     server_properties = md5(local.server_properties_content)
@@ -178,127 +313,18 @@ resource "null_resource" "mc_provisioner" {
     mc_version        = var.mc_version
   }
 
-  provisioner "remote-exec" {
-    connection {
-      host        = hcloud_server.mc.ipv4_address
-      user        = "root"
-      private_key = var.private_ssh_key
-      agent       = false
-    }
-
-    inline = [
-      "timeout 300 bash -c 'until cloud-init status --wait 2>/dev/null; do sleep 5; done' || echo 'cloud-init wait skipped'",
-      "apt-get update && apt-get install -y openjdk-21-jre-headless screen",
-      "useradd -m -s /bin/bash minecraft || echo 'User already exists'",
-      "mkdir -p /mnt/minecraft",
-      "grep -q '/dev/disk/by-id/scsi-0HC_Volume_${hcloud_volume.mc_vol.id}' /etc/fstab || echo '/dev/disk/by-id/scsi-0HC_Volume_${hcloud_volume.mc_vol.id} /mnt/minecraft ext4 defaults 0 2' >> /etc/fstab",
-      "systemctl daemon-reload",
-      "mount /mnt/minecraft || true",
-      "systemctl stop minecraft || echo 'Service not running'",
-    ]
-  }
-
-  provisioner "file" {
-    source      = "${path.module}/minecraft/start.sh"
-    destination = "/mnt/minecraft/start.sh"
-    connection {
-      host        = hcloud_server.mc.ipv4_address
-      user        = "root"
-      private_key = var.private_ssh_key
-      agent       = false
-    }
-  }
-
-  provisioner "file" {
-    source      = "${path.module}/minecraft/eula.txt"
-    destination = "/mnt/minecraft/eula.txt"
-    connection {
-      host        = hcloud_server.mc.ipv4_address
-      user        = "root"
-      private_key = var.private_ssh_key
-      agent       = false
-    }
-  }
-
-  provisioner "file" {
-    content     = local.server_properties_content
-    destination = "/mnt/minecraft/server.properties"
-    connection {
-      host        = hcloud_server.mc.ipv4_address
-      user        = "root"
-      private_key = var.private_ssh_key
-      agent       = false
-    }
-  }
-
-  provisioner "file" {
-    content     = local.whitelist_json_content
-    destination = "/mnt/minecraft/whitelist.json"
-    connection {
-      host        = hcloud_server.mc.ipv4_address
-      user        = "root"
-      private_key = var.private_ssh_key
-      agent       = false
-    }
-  }
-
-  provisioner "file" {
-    content     = local.ops_json_content
-    destination = "/mnt/minecraft/ops.json"
-    connection {
-      host        = hcloud_server.mc.ipv4_address
-      user        = "root"
-      private_key = var.private_ssh_key
-      agent       = false
-    }
-  }
-
-  provisioner "file" {
-    source      = "${path.module}/services/minecraft.service"
-    destination = "/etc/systemd/system/minecraft.service"
-    connection {
-      host        = hcloud_server.mc.ipv4_address
-      user        = "root"
-      private_key = var.private_ssh_key
-      agent       = false
-    }
+  connection {
+    host        = hcloud_server.mc.ipv4_address
+    user        = "root"
+    private_key = var.private_ssh_key
+    agent       = false
   }
 
   provisioner "remote-exec" {
-    connection {
-      host        = hcloud_server.mc.ipv4_address
-      user        = "root"
-      private_key = var.private_ssh_key
-      agent       = false
-    }
-
-    inline = length(var.mc_mods) > 0 ? flatten([
-      "mkdir -p /mnt/minecraft/mods",
-      [
-        for mod in local.mods_base64 :
-        <<EOT
-echo "${mod.content}" | base64 --decode > /mnt/minecraft/mods/${mod.filename}
-EOT
-      ]
-    ]) : []
-  }
-
-  provisioner "remote-exec" {
-    connection {
-      host        = hcloud_server.mc.ipv4_address
-      user        = "root"
-      private_key = var.private_ssh_key
-      agent       = false
-    }
-
     inline = [
       "chown -R minecraft:minecraft /mnt/minecraft",
       "chmod +x /mnt/minecraft/start.sh",
       "chmod 644 /etc/systemd/system/minecraft.service",
-
-      "sudo -u minecraft wget -O /mnt/minecraft/${var.mc_server_type == "forge" ? "forge-installer.jar" : "server.jar"} https://mcutils.com/api/server-jars/${var.mc_server_type}/${var.mc_version}/download || exit 1",
-      var.mc_server_type == "forge" ? "cd /mnt/minecraft && sudo -u minecraft java -jar forge-installer.jar --installServer && rm -f forge-installer.jar" : "test -f /mnt/minecraft/server.jar || exit 1",
-
       "systemctl daemon-reload",
       "systemctl enable minecraft",
       "systemctl restart minecraft",
@@ -306,4 +332,13 @@ EOT
       "systemctl is-active minecraft || (journalctl --no-pager -u minecraft -n 50 && exit 1)"
     ]
   }
+}
+output "server_ip" {
+  description = "Public IP address of the Minecraft server"
+  value       = hcloud_server.mc.ipv4_address
+}
+
+output "volume_id" {
+  description = "ID of the persistent volume"
+  value       = hcloud_volume.mc_vol.id
 }
