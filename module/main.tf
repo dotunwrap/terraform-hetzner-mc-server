@@ -211,7 +211,8 @@ resource "null_resource" "mc_jar_provisioner" {
       var.mc_server_type != "vanilla"
       ? [
         "sudo -u minecraft wget -O /mnt/minecraft/server.jar.zip https://files.mcjars.app/${var.mc_server_type}/${var.mc_version}/${var.mc_modloader_version}/1/server.jar.zip ||  exit 1",
-        "unzip /mnt/minecraft/server.jar.zip -d /mnt/minecraft && rm /mnt/minecraft/server.jar.zip"
+        "unzip /mnt/minecraft/server.jar.zip -d /mnt/minecraft && rm /mnt/minecraft/server.jar.zip",
+        "mkdir /mnt/minecraft/mods"
       ]
       : ["sudo -u minecraft wget -O /mnt/minecraft/server.jar https://mcutils.com/api/server-jars/vanilla/${var.mc_version}/download || exit 1"],
       # var.mc_server_type == "forge" ? ["cd /mnt/minecraft && sudo -u minecraft java -jar forge-installer.jar --installServer && rm -f forge-installer.jar"] : [],
